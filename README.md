@@ -30,7 +30,7 @@ node scripts/rls-check.mjs   # tenant-isolation checks straight against Supabase
 ## Connect a hosted Supabase project
 
 1. Create a project (choose an EU region, e.g. Zurich/Frankfurt, for LPD/nLPD data-residency comfort).
-2. `npx supabase link --project-ref <ref>` then `npx supabase db push` (creates tables, RLS, buckets, plans).
+2. `npx supabase link --project-ref <ref>` then `npx supabase db push` (creates tables, grants, RLS, buckets, plans). Newer projects do not grant table access to the API roles automatically; the `grants` migration handles it.
 3. Auth > URL configuration: Site URL = your app URL; add `https://<your-domain>/**` to redirect URLs.
 4. Auth > Providers > Email: keep "Confirm email" on in production.
 5. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `NEXT_PUBLIC_SITE_URL` in Vercel.
