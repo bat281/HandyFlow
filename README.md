@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HandyFlow — Phase 1 (MVP)
 
-## Getting Started
+Administrative assistant for Swiss craftsmen (Suisse romande first). Phase 1 covers:
+authentication, dashboard, customers, interventions (with photos), manual intervention
+reports and server-side PDF export. French UI, CHF, DD.MM.YYYY, Swiss NPA validation.
 
-First, run the development server:
+Stack: Next.js 15 (App Router, Server Actions) · TypeScript · Tailwind CSS 4 · shadcn/ui-style
+components (Radix) · Supabase (Postgres + Auth + Storage, RLS everywhere) · `@react-pdf/renderer` + `sharp` for PDFs.
+
+## Run locally
+
+Requirements: Node 20+, Docker (for the local Supabase stack).
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npx supabase start          # local Postgres/Auth/Storage, applies supabase/migrations
+cp .env.example .env.local   # then paste the local URL + publishable key printed by `npx supabase status`
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Auth e-mails (signup confirmation, password reset) are caught by Mailpit at http://127.0.0.1:54324.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Checks:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run lint && npx tsc --noEmit && npm run build
+node scripts/rls-check.mjs   # tenant-isolation checks straight against Supabase (local stack)
+```
 
-## Learn More
+## Connect a hosted Supabase project
 
-To learn more about Next.js, take a look at the following resources:
+1. Create a project (choose an EU region, e.g. Zurich/Frankfurt, for LPD/nLPD data-residency comfort).
+2. `npx supabase link --project-ref <ref>` then `npx supabase db push` (creates tables, RLS, buckets, plans).
+3. Auth > URL configuration: Site URL = your app URL; add `https://<your-domain>/**` to redirect URLs.
+4. Auth > Providers > Email: keep "Confirm email" on in production.
+5. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `NEXT_PUBLIC_SITE_URL` in Vercel.
+   No secret/service-role key is used by Phase 1.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/app/(auth)/        connexion, inscription, mot-de-passe-oublie + auth server actions
+src/app/(app)/         tableau-de-bord, clients, interventions, parametres (protected)
+src/app/api/interventions/[id]/pdf   server-side PDF (RLS-scoped, inline or ?download=1)
+src/app/auth/          e-mail link handler (confirm) and POST sign-out
+src/lib/               supabase clients, session, zod validation, formatting, i18n (fr.ts)
+src/lib/pdf/           intervention report document
+supabase/migrations/   schema, RLS policies, storage buckets, plan catalogue
+```
 
-## Deploy on Vercel
+## Data model and security
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Tables: companies, profiles (users), company_members, customers, interventions,
+intervention_photos, tax_rates, quotes, quote_items, invoices, invoice_items, plans, subscriptions.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Every business row has `company_id`; RLS allows access only to members of that company
+  (`is_company_member()`), so the model is ready for multi-employee companies (Business plan).
+- Composite foreign keys `(id, company_id)` make it impossible to link a record to another company's customer/intervention.
+- Signup creates the company, profile and owner membership in a database trigger.
+- Storage buckets are private; the first path segment must be a company the user belongs to. Photos are shown via short-lived signed URLs.
+- Report numbers (`RAP-YYYY-0001`) are assigned by the database when a report is marked as completed.
+- Quotes/invoices tables, VAT rates and plans exist already, with no UI yet (Phases 3–4). Prices live in the `plans` table, not in code.
+
+## Known limits / next steps
+
+- Phase 2 (voice → AI report) not started, by design.
+- Quotes, invoices, VAT settings and payment tracking: Phase 3. Dashboard tiles for them show 0 with a "bientôt" hint.
+- i18n: navigation, statuses and validation messages are in `src/lib/i18n/fr.ts`; page copy is still inline French and should be moved there before adding German/Italian.
+- iPhone HEIC photos: browsers usually convert to JPEG on upload; raw HEIC files are rejected.
+- Nothing here has been reviewed for legal/accounting compliance (LPD, VAT, archiving) yet.
