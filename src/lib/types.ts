@@ -52,6 +52,7 @@ export type Intervention = {
   duration_minutes: number | null;
   observations: string | null;
   notes: string | null;
+  voice_transcript: string | null;
   status: InterventionStatus;
   report_number: string | null;
   completed_at: string | null;

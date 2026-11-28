@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Nouvelle intervention" };
 
 export default async function NewInterventionPage({ searchParams }: { searchParams: Promise<{ client?: string }> }) {
   const { client } = await searchParams;
-  const { supabase } = await getSession();
+  const { supabase, company } = await getSession();
   const { data: customers } = await supabase
     .from("customers")
     .select("id, first_name, last_name, company_name, address_line, postal_code, city")
@@ -30,7 +30,7 @@ export default async function NewInterventionPage({ searchParams }: { searchPara
           action={<Button asChild><Link href="/clients/nouveau?retour=intervention"><UserPlus /> Ajouter un client</Link></Button>}
         />
       ) : (
-        <InterventionForm customers={customers} defaultCustomerId={client} today={todayISO()} />
+        <InterventionForm companyId={company.id} customers={customers} defaultCustomerId={client} today={todayISO()} />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-# HandyFlow — Phase 1 (MVP)
+# HandyFlow
 
 Administrative assistant for Swiss craftsmen (Suisse romande first). Phase 1 covers:
 authentication, dashboard, customers, interventions (with photos), manual intervention
@@ -36,6 +36,28 @@ node scripts/rls-check.mjs   # tenant-isolation checks straight against Supabase
 5. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `NEXT_PUBLIC_SITE_URL` in Vercel.
    No secret/service-role key is used by Phase 1.
 
+## Phase 2 — AI voice reports
+
+On the new/edit intervention form, **Dicter le rapport** records the craftsman (or imports a voice memo),
+and the AI fills the report fields (work done, materials, time spent, recommendations, internal notes).
+Nothing is saved until the craftsman reviews and clicks *Enregistrer*.
+
+Flow: browser `MediaRecorder` (WebM on Android/Chrome, MP4 on iPhone) → private Storage bucket
+`intervention-audio` (uploaded straight from the browser, so no Vercel body-size limit) → `POST /api/voice-report`
+→ speech-to-text → Claude (structured JSON output) → fields filled client-side. The audio file is deleted
+right after processing; the transcript is kept on the intervention (`voice_transcript`, never printed).
+
+- Speech-to-text: Mistral Voxtral (`voxtral-mini-latest`, EU provider) by default, or OpenAI `gpt-4o-transcribe`
+  if only `OPENAI_API_KEY` is set. Language forced to French.
+- Report drafting: Mistral by default (JSON-schema structured output; tries `mistral-small-latest`, then
+  `ministral-14b-latest`, then `ministral-8b-latest`, since some models have no quota on the free plan), or Claude
+  (`claude-opus-5-5`) when `ANTHROPIC_API_KEY` is set or `AI_REPORT_PROVIDER=anthropic`.
+- Cost guard: `ai_usage` table logs each run; `AI_MONTHLY_LIMIT` (default 200) caps runs per company per month.
+  Plan gating (`voice_to_report` feature of the plan) arrives with subscriptions in Phase 4.
+- Env vars: only `MISTRAL_API_KEY` is required. `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` are optional. See `.env.example`.
+- Mistral's free plan may use API inputs for training: turn that off in the Mistral console (privacy settings) since reports contain customer data.
+- Database: migration `20261128000000_voice_reports.sql`.
+
 ## Structure
 
 ```
@@ -63,7 +85,6 @@ intervention_photos, tax_rates, quotes, quote_items, invoices, invoice_items, pl
 
 ## Known limits / next steps
 
-- Phase 2 (voice → AI report) not started, by design.
 - Quotes, invoices, VAT settings and payment tracking: Phase 3. Dashboard tiles for them show 0 with a "bientôt" hint.
 - i18n: navigation, statuses and validation messages are in `src/lib/i18n/fr.ts`; page copy is still inline French and should be moved there before adding German/Italian.
 - iPhone HEIC photos: browsers usually convert to JPEG on upload; raw HEIC files are rejected.
