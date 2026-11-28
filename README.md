@@ -49,10 +49,13 @@ right after processing; the transcript is kept on the intervention (`voice_trans
 
 - Speech-to-text: Mistral Voxtral (`voxtral-mini-latest`, EU provider) by default, or OpenAI `gpt-4o-transcribe`
   if only `OPENAI_API_KEY` is set. Language forced to French.
-- Report drafting: Claude (`claude-opus-5-5`, low effort, structured outputs, server-side refusal fallback).
+- Report drafting: Mistral by default (JSON-schema structured output; tries `mistral-small-latest`, then
+  `ministral-14b-latest`, then `ministral-8b-latest`, since some models have no quota on the free plan), or Claude
+  (`claude-opus-5-5`) when `ANTHROPIC_API_KEY` is set or `AI_REPORT_PROVIDER=anthropic`.
 - Cost guard: `ai_usage` table logs each run; `AI_MONTHLY_LIMIT` (default 200) caps runs per company per month.
   Plan gating (`voice_to_report` feature of the plan) arrives with subscriptions in Phase 4.
-- Env vars: `ANTHROPIC_API_KEY`, `MISTRAL_API_KEY` (or `OPENAI_API_KEY`). See `.env.example`.
+- Env vars: only `MISTRAL_API_KEY` is required. `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` are optional. See `.env.example`.
+- Mistral's free plan may use API inputs for training: turn that off in the Mistral console (privacy settings) since reports contain customer data.
 - Database: migration `20261128000000_voice_reports.sql`.
 
 ## Structure

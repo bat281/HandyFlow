@@ -54,6 +54,7 @@ export async function POST(request: Request) {
     }
 
     const { report, usage } = await generateReport(transcript, context);
+    if (report.duration_minutes != null) report.duration_minutes = Math.max(0, Math.round(report.duration_minutes));
 
     const { error: usageError } = await supabase.from("ai_usage").insert({
       company_id: companyId,
