@@ -1,5 +1,5 @@
 "use client";
-import { useActionState, useRef } from "react";
+import { useActionState, useRef, useState } from "react";
 import Link from "next/link";
 import { UserPlus } from "lucide-react";
 import { saveIntervention } from "@/app/(app)/interventions/actions";
@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { MaterialsEditor } from "./materials-editor";
+import { VoiceReport, type VoiceReportResult } from "./voice-report";
 import type { ActionState, Customer, Intervention, Material } from "@/lib/types";
 
 export const WORK_TYPES = [
@@ -23,8 +24,8 @@ export const WORK_TYPES = [
 type CustomerOption = Pick<Customer, "id" | "first_name" | "last_name" | "company_name" | "address_line" | "postal_code" | "city">;
 
 export function InterventionForm({
-  customers, intervention, defaultCustomerId, today,
-}: { customers: CustomerOption[]; intervention?: Intervention; defaultCustomerId?: string; today: string }) {
+  companyId, customers, intervention, defaultCustomerId, today,
+}: { companyId: string; customers: CustomerOption[]; intervention?: Intervention; defaultCustomerId?: string; today: string }) {
   const [state, action] = useActionState<ActionState, FormData>(saveIntervention, {});
   useRedirectOnSuccess(state);
   const e = state.fieldErrors ?? {};
@@ -37,6 +38,50 @@ export function InterventionForm({
   const materials: Material[] = v?.materials_json
     ? safeJson(v.materials_json)
     : (intervention?.materials ?? []);
+  const formRef = useRef<HTMLFormElement>(null);
+  const [materialsState, setMaterialsState] = useState({ key: 0, items: materials });
+  const [transcript, setTranscript] = useState(v?.voice_transcript ?? intervention?.voice_transcript ?? "");
+
+  function field(name: string) {
+    return formRef.current?.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+  }
+
+  function voiceContext() {
+    const sel = field("customer_id") as HTMLSelectElement | null;
+    return {
+      customer: sel?.selectedOptions[0]?.value ? sel.selectedOptions[0].text : undefined,
+      workType: field("work_type")?.value || undefined,
+      date: field("intervention_date")?.value || undefined,
+    };
+  }
+
+  /** Fills the report from the AI draft. Empty fields are filled, filled ones get the draft appended. */
+  function applyVoiceReport({ transcript: t, report: r }: VoiceReportResult) {
+    const fill = (name: string, text: string) => {
+      const el = field(name);
+      if (!el || !text.trim()) return;
+      el.value = el.value.trim() ? `${el.value.trim()}\n\n${text.trim()}` : text.trim();
+    };
+    const wt = field("work_type");
+    if (wt && !wt.value.trim() && r.work_type.trim()) wt.value = r.work_type.trim();
+    fill("description", r.description);
+    fill("observations", r.observations);
+    fill("notes", r.internal_notes);
+    if (r.duration_minutes != null && r.duration_minutes > 0) {
+      const h = field("duration_hours"), m = field("duration_mins");
+      if (h && m && !Number(h.value) && !Number(m.value)) {
+        h.value = String(Math.floor(r.duration_minutes / 60));
+        m.value = String(r.duration_minutes % 60);
+      }
+    }
+    if (r.materials.length) {
+      const current = safeJson(field("materials_json")?.value ?? "[]").filter((x) => x.name.trim());
+      setMaterialsState((s) => ({ key: s.key + 1, items: [...current, ...r.materials] }));
+    }
+    setTranscript((prev) => (prev ? `${prev}\n\n---\n\n${t}` : t));
+    field("description")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   const dh = v?.duration_hours ?? (intervention?.duration_minutes != null ? String(Math.floor(intervention.duration_minutes / 60)) : "");
   const dm = v?.duration_mins ?? (intervention?.duration_minutes != null ? String(intervention.duration_minutes % 60) : "");
 
@@ -49,8 +94,9 @@ export function InterventionForm({
   }
 
   return (
-    <form action={action} noValidate className="grid gap-6">
+    <form ref={formRef} action={action} noValidate className="grid gap-6">
       <input type="hidden" name="_id" value={intervention?.id ?? ""} />
+      <input type="hidden" name="voice_transcript" value={transcript} />
       <FormMessage message={state.message} />
 
       <Card>
@@ -105,6 +151,8 @@ export function InterventionForm({
         </CardContent>
       </Card>
 
+      <VoiceReport companyId={companyId} getContext={voiceContext} onResult={applyVoiceReport} />
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Rapport d&apos;intervention</CardTitle>
@@ -116,7 +164,7 @@ export function InterventionForm({
           </FormField>
           <div className="grid gap-2">
             <span className="text-sm font-medium">Matériel utilisé</span>
-            <MaterialsEditor initial={materials} error={e.materials} />
+            <MaterialsEditor key={materialsState.key} initial={materialsState.items} error={e.materials} />
           </div>
           <fieldset className="grid gap-2">
             <legend className="mb-2 text-sm font-medium">Temps passé</legend>
@@ -141,6 +189,12 @@ export function InterventionForm({
         </CardHeader>
         <CardContent>
           <Textarea id="notes" name="notes" aria-label="Notes internes" rows={3} defaultValue={val("notes")} />
+          {transcript && (
+            <details className="mt-3 text-sm">
+              <summary className="cursor-pointer text-muted-foreground">Transcription de la dictée</summary>
+              <p className="mt-2 whitespace-pre-wrap rounded-md bg-muted p-3 text-muted-foreground">{transcript}</p>
+            </details>
+          )}
         </CardContent>
         <CardFooter className="justify-end">
           <Button asChild variant="ghost"><Link href={intervention ? `/interventions/${intervention.id}` : "/interventions"}>Annuler</Link></Button>

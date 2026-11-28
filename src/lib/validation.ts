@@ -73,6 +73,7 @@ export const interventionSchema = z.object({
   description: optionalText(20000),
   observations: optionalText(10000),
   notes: optionalText(10000),
+  voice_transcript: optionalText(50000),
   duration_hours: z.coerce.number({ error: v.number }).int().min(0).max(999).default(0),
   duration_mins: z.coerce.number({ error: v.number }).int().min(0).max(59).default(0),
   materials: z.array(materialSchema).max(200),
