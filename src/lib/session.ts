@@ -15,21 +15,27 @@ export const getSession = cache(async () => {
   } = await supabase.auth.getUser();
   if (!user) redirect("/connexion");
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("id, first_name, last_name, phone, current_company_id")
     .eq("id", user.id)
     .single<Profile>();
 
+  if (profileError) console.error("[session] profile query failed", profileError);
   let companyId = profile?.current_company_id ?? null;
   if (!companyId) {
-    const { data: m } = await supabase.from("company_members").select("company_id").eq("user_id", user.id).limit(1).maybeSingle();
+    const { data: m, error } = await supabase.from("company_members").select("company_id").eq("user_id", user.id).limit(1).maybeSingle();
+    if (error) console.error("[session] membership query failed", error);
     companyId = m?.company_id ?? null;
   }
-  if (!companyId) throw new Error("Aucune entreprise associée à ce compte.");
+  // Missing company (or a database that denies access): show a recovery page, never crash.
+  if (!companyId) redirect("/compte-incomplet");
 
-  const { data: company } = await supabase.from("companies").select("*").eq("id", companyId).single<Company>();
-  if (!company) throw new Error("Entreprise introuvable.");
+  const { data: company, error: companyError } = await supabase.from("companies").select("*").eq("id", companyId).single<Company>();
+  if (!company) {
+    console.error("[session] company query failed", companyError);
+    redirect("/compte-incomplet");
+  }
 
   return { supabase, user, profile, company };
 });
