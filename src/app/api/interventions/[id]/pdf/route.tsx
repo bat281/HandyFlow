@@ -13,7 +13,8 @@ async function toJpeg(blob: Blob, maxWidth: number): Promise<Buffer | null> {
   try {
     const input = Buffer.from(await blob.arrayBuffer());
     return await sharp(input).rotate().resize({ width: maxWidth, withoutEnlargement: true }).flatten({ background: "#ffffff" }).jpeg({ quality: 78 }).toBuffer();
-  } catch {
+  } catch (err) {
+    console.error("[pdf] image conversion failed", err);
     return null;
   }
 }
@@ -53,28 +54,47 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (data) {
       try {
         logo = await sharp(Buffer.from(await data.arrayBuffer())).resize({ width: 600, withoutEnlargement: true }).png().toBuffer();
-      } catch {
+      } catch (err) {
+        console.error("[pdf] logo conversion failed", err);
         logo = null;
       }
     }
   }
 
   const { customers: customer, ...rest } = intervention;
-  try {
-    const pdf = await renderToBuffer(
-      <InterventionReport company={company} customer={customer} intervention={rest as Intervention} photos={photos} logo={logo} />,
+  const render = (withImages: boolean) =>
+    renderToBuffer(
+      <InterventionReport
+        company={company}
+        customer={customer}
+        intervention={rest as Intervention}
+        photos={withImages ? photos : []}
+        logo={withImages ? logo : null}
+      />,
     );
-    const download = new URL(request.url).searchParams.has("download");
-    const slug = (intervention.report_number ?? `brouillon-${intervention.intervention_date}`).replace(/[^\w.-]+/g, "-");
-    return new NextResponse(new Uint8Array(pdf), {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `${download ? "attachment" : "inline"}; filename="rapport-${slug}.pdf"`,
-        "Cache-Control": "private, no-store",
-      },
-    });
+
+  let pdf: Buffer;
+  try {
+    pdf = await render(true);
   } catch (err) {
-    console.error("PDF generation failed", err);
-    return NextResponse.json({ error: "La génération du PDF a échoué." }, { status: 500 });
+    console.error("[pdf] render with images failed", { id, photos: photos.length, logo: !!logo }, err);
+    try {
+      // Degrade gracefully: a report without pictures beats no report at all.
+      pdf = await render(false);
+    } catch (err2) {
+      console.error("[pdf] render without images failed", { id }, err2);
+      const detail = err2 instanceof Error ? `${err2.name}: ${err2.message}` : String(err2);
+      return NextResponse.json({ error: "La génération du PDF a échoué.", detail: detail.slice(0, 300) }, { status: 500 });
+    }
   }
+
+  const download = new URL(request.url).searchParams.has("download");
+  const slug = (intervention.report_number ?? `brouillon-${intervention.intervention_date}`).replace(/[^\w.-]+/g, "-");
+  return new NextResponse(new Uint8Array(pdf), {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `${download ? "attachment" : "inline"}; filename="rapport-${slug}.pdf"`,
+      "Cache-Control": "private, no-store",
+    },
+  });
 }
